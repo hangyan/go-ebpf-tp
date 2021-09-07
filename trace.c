@@ -3,10 +3,10 @@
 #define KBUILD_MODNAME "bpf_thingy"
 #endif
 
-#include <linux/kconfig.h>
-#include <linux/version.h>
+//#include <linux/kconfig.h>
+// #include <linux/version.h>
 #pragma GCC diagnostic ignored "-Wframe-address"
-#include <linux/ptrace.h>
+//#include <linux/ptrace.h>
 #include <linux/bpf.h>
 #include "bpf_helpers.h"
 #include <linux/tcp.h>
