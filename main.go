@@ -1,85 +1,82 @@
 package main
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang flowsnoop flowsnoop.bpf.c -- -I./include
-
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
+	"github.com/cilium/ebpf/link"
+	"github.com/spf13/cast"
+	"golang.org/x/sys/unix"
+	"log"
+	"math/big"
 	"net"
-	"os"
-	"os/signal"
-	"time"
-
-	bpf "github.com/iovisor/gobpf/elf"
 )
 
-type rcvEvent struct {
-	Sport uint16
-	Dport uint16
-	Saddr uint32
-	Daddr uint32
-	Rtt   uint32
+func setlimit() {
+	if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK,
+		&unix.Rlimit{
+			Cur: unix.RLIM_INFINITY,
+			Max: unix.RLIM_INFINITY,
+		}); err != nil {
+		log.Fatalf("failed to set temporary rlimit: %v", err)
+	}
+}
+
+// IPv4Int...
+func IP4toInt(IPv4Address net.IP) int64 {
+	IPv4Int := big.NewInt(0)
+	IPv4Int.SetBytes(IPv4Address.To4())
+	return IPv4Int.Int64()
+}
+
+//similar to Python's socket.inet_aton() function
+//https://docs.python.org/3/library/socket.html#socket.inet_aton
+
+func Pack32BinaryIP4(ip4Address string) string {
+	ipv4Decimal := IP4toInt(net.ParseIP(ip4Address))
+
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, uint32(ipv4Decimal))
+
+	if err != nil {
+		fmt.Println("Unable to write to buffer:", err)
+	}
+
+	// present in hexadecimal format
+	result := fmt.Sprintf("%x", buf.Bytes())
+	return result
 }
 
 func main() {
-	m := bpf.NewModule("./rtt.o")
-	defer m.Close()
+	setlimit()
 
-	if err := m.Load(nil); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load program: %v\n", err)
-		os.Exit(1)
-	}
-
-	kChan := m.IterKprobes()
-	for kprobe := range kChan {
-		fmt.Printf("kprobe: %v\n", kprobe)
-	}
-
-	mChan := m.IterMaps()
-	for bpfMap := range mChan {
-		fmt.Printf("kprobe: %v\n", bpfMap.Name)
-	}
-
-	if err := m.EnableKprobe("kprobe/tcp_set_state", -1); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to enable kprobe: %v\n", err)
-		os.Exit(1)
-	}
-
-	rcvChan := make(chan []byte)
-	pmap, err := bpf.InitPerfMap(m, "tcp_rcv_event", rcvChan, nil)
+	objs := flowsnoopObjects{}
+	err := loadFlowsnoopObjects(objs, nil)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		panic(err)
 	}
 
-	pmap.PollStart()
-	defer pmap.PollStop()
-	time.Sleep(2 * time.Second)
-	go func() {
-		var event rcvEvent
-		for {
-			data := <-rcvChan
-			err := binary.Read(bytes.NewBuffer(data), binary.LittleEndian, &event)
-			if err != nil {
-				if err != io.EOF {
-					fmt.Printf("failed to decode received data: %s\n", err)
-				}
-				continue
-			}
-			fmt.Printf("src: %s:%d, => dst: %s:%d RTT: %s\n", toIP(event.Saddr).String(), event.Sport, toIP(event.Daddr).String(), event.Dport, time.Duration(event.Rtt))
-		}
-	}()
+	value := cast.ToUint32("0x" + Pack32BinaryIP4("192.168.227.2"))
+	k := uint32(1)
+	err := objs.ConfigMap.Update(k, value, 0)
+	if err != nil {
+		panic(err)
+	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, os.Kill)
+	net1, err := link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
+	if err != nil {
+		panic(err)
+	}
+	net2, err := link.Tracepoint("net", "net_dev_start_xmit", objs.TracepointNetNetDevStartXmit)
+	if err != nil {
+		panic(err)
+	}
 
-	<-sig
-}
-
-func toIP(addr uint32) net.IP {
-	ip := make(net.IP, 4)
-	binary.LittleEndian.PutUint32(ip, addr)
-	return ip
+	var key uint32
+	var v []byte
+	m := objs.Events.Iterate()
+	for m.Next(key, v) {
+		fmt.Println(key)
+	}
 }

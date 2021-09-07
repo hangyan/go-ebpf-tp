@@ -6,3 +6,5 @@ require (
 	github.com/cilium/ebpf v0.6.2 // indirect
 	github.com/iovisor/gobpf v0.2.0
 )
+
+require github.com/spf13/cast v1.4.1 // indirect
