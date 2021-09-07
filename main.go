@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang flowsnoop flowsnoop.bpf.c -- -I./include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang flowsnoop ./c/flowsnoop.bpf.c -- -I.
 import (
 	"bytes"
 	"encoding/binary"
@@ -59,16 +59,16 @@ func main() {
 
 	value := cast.ToUint32("0x" + Pack32BinaryIP4("192.168.227.2"))
 	k := uint32(1)
-	err := objs.ConfigMap.Update(k, value, 0)
+	err = objs.ConfigMap.Update(k, value, 0)
 	if err != nil {
 		panic(err)
 	}
 
-	net1, err := link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
+	_, err = link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
 	if err != nil {
 		panic(err)
 	}
-	net2, err := link.Tracepoint("net", "net_dev_start_xmit", objs.TracepointNetNetDevStartXmit)
+	_, err = link.Tracepoint("net", "net_dev_start_xmit", objs.TracepointNetNetDevStartXmit)
 	if err != nil {
 		panic(err)
 	}
