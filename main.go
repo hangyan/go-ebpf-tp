@@ -52,7 +52,7 @@ func main() {
 	setlimit()
 
 	objs := flowsnoopObjects{}
-	err := loadFlowsnoopObjects(objs, nil)
+	err := loadFlowsnoopObjects(&objs, nil)
 	if err != nil {
 		panic(err)
 	}
