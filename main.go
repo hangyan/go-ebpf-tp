@@ -6,12 +6,32 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
 	"github.com/spf13/cast"
 	"golang.org/x/sys/unix"
 	"log"
 	"math/big"
 	"net"
+	"os"
 )
+
+
+type data struct {
+	SAddr uint32
+	DAddr uint32
+	SPort uint16
+	DPort uint16
+	Proto uint8
+}
+
+
+type gdata struct {
+	SAddr string
+	DAddr string
+	SPort uint
+	DPort uint
+	Proto uint
+}
 
 func setlimit() {
 	if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK,
@@ -57,7 +77,7 @@ func main() {
 		panic(err)
 	}
 
-	value := cast.ToUint32("0x" + Pack32BinaryIP4("192.168.227.2"))
+	value := cast.ToUint32("0x" + Pack32BinaryIP4("192.168.227.4"))
 	k := uint32(1)
 	err = objs.ConfigMap.Update(k, value, 0)
 	if err != nil {
@@ -73,10 +93,33 @@ func main() {
 		panic(err)
 	}
 
-	var key uint32
-	var v []byte
-	m := objs.Events.Iterate()
-	for m.Next(key, v) {
-		fmt.Println(key)
+	rd, err := perf.NewReader(objs.Events, os.Getpagesize())
+	if err != nil {
+		log.Fatalf("read events map error")
 	}
+
+	for {
+		ev, err := rd.Read()
+		if err != nil {
+			log.Fatalf("read fail")
+		}
+
+		if ev.LostSamples != 0 {
+			log.Printf("perf event ring buffer full, dropped %d samples", ev.LostSamples)
+			continue
+		}
+
+
+		b_arr := bytes.NewBuffer(ev.RawSample)
+		var data data
+		if err := binary.Read(b_arr, binary.LittleEndian, &data); err != nil {
+			log.Printf("parsing perf event: %s", err)
+			continue
+		}
+
+		fmt.Printf("On cpu %02d %s ran : %d %s\n",
+			ev.CPU, data.SAddr, data.Proto, data.DAddr)
+
+	}
+
 }
