@@ -159,10 +159,6 @@ static int do_count4(void *ctx, struct sk_buff *skb, int len) {
     BPF_CORE_READ_INTO(&conn.dst_port, tcp, dest);
   }
 
-  if (!source_ip_match(conn.src_ip)) {
-          return -1;
-  }
-
 
   if (use_map)
     conn_table = &bconnections;
