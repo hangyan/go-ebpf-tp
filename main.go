@@ -15,7 +15,6 @@ import (
 	"os"
 )
 
-
 type data struct {
 	SAddr uint32
 	DAddr uint32
@@ -23,7 +22,6 @@ type data struct {
 	DPort uint16
 	Proto uint8
 }
-
 
 type gdata struct {
 	SAddr string
@@ -93,6 +91,8 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Println("attach tracepoints...")
+
 	rd, err := perf.NewReader(objs.Events, os.Getpagesize())
 	if err != nil {
 		log.Fatalf("read events map error")
@@ -104,23 +104,41 @@ func main() {
 			log.Fatalf("read fail")
 		}
 
-		fmt.Printf("fuck get one: %d", ev.CPU)
-
 		if ev.LostSamples != 0 {
 			log.Printf("perf event ring buffer full, dropped %d samples", ev.LostSamples)
 			continue
 		}
 
-
 		b_arr := bytes.NewBuffer(ev.RawSample)
-		var data data
-		if err := binary.Read(b_arr, binary.LittleEndian, &data); err != nil {
+		var dt data
+		if err := binary.Read(b_arr, binary.LittleEndian, &dt); err != nil {
 			log.Printf("parsing perf event: %s", err)
 			continue
 		}
 
-		fmt.Printf("On cpu %02d %s ran : %d %s\n",
-			ev.CPU, data.SAddr, data.Proto, data.DAddr)
+		var bsport = make([]byte, 2)
+		var bdport = make([]byte, 2)
+		binary.BigEndian.PutUint16(bsport, dt.SPort)
+		binary.BigEndian.PutUint16(bdport, dt.DPort)
+
+		godata := gdata{
+			Proto: uint(dt.Proto),
+			SPort: uint(binary.LittleEndian.Uint16(bsport)),
+			DPort: uint(binary.LittleEndian.Uint16(bdport)),
+		}
+
+		var LeSAddr = make([]byte, 4)
+		var LeDAddr = make([]byte, 4)
+
+		binary.LittleEndian.PutUint32(LeSAddr, dt.SAddr)
+		binary.LittleEndian.PutUint32(LeDAddr, dt.DAddr)
+		godata.SAddr = net.IP.String(LeSAddr)
+		godata.DAddr = net.IP.String(LeDAddr)
+
+		fmt.Fprintf(os.Stdout, "(proto: %d) %s (%d) => %s (%d)\n",
+			godata.Proto,
+			godata.SAddr, godata.SPort,
+			godata.DAddr, godata.DPort)
 
 	}
 
