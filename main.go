@@ -104,6 +104,8 @@ func main() {
 			log.Fatalf("read fail")
 		}
 
+		fmt.Printf("fuck get one: %d", ev.CPU)
+
 		if ev.LostSamples != 0 {
 			log.Printf("perf event ring buffer full, dropped %d samples", ev.LostSamples)
 			continue
