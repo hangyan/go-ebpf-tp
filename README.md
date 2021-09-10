@@ -1,2 +1,5 @@
 # go-ebpf-tp
-Example of golang-ebpf for tracepoint 
+
+This project is a demo using cilium/ebpf library to build a Non-CGO go binary which will loads ebpf program at some net tracepoints.
+
+
