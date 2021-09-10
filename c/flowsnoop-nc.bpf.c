@@ -19,6 +19,26 @@
 #include "bpf/bpf_endian.h"
 
 
+#pragma clang diagnostic ignored "-Wincompatible-pointer-types-discards-qualifiers"
+
+
+#ifndef CORE
+#define READ_KERN(ptr) ({ typeof(ptr) _val;                             \
+                          __builtin_memset(&_val, 0, sizeof(_val));     \
+                          bpf_probe_read(&_val, sizeof(_val), &ptr);    \
+                          _val;                                         \
+                        })
+#else
+// Try using READ_KERN here, just don't embed them in each other
+#define READ_KERN(ptr) ({ typeof(ptr) _val;                             \
+                          __builtin_memset(&_val, 0, sizeof(_val));     \
+                          bpf_core_read(&_val, sizeof(_val), &ptr);    \
+                          _val;                                         \
+                        })
+#endif
+
+
+
 #ifndef BPF_NOEXIST
 #define BPF_NOEXIST 1
 #endif
@@ -121,23 +141,23 @@ static __always_inline bool source_ip_match(u32 value) {
 
 
 static inline struct tcphdr *skb_to_tcphdr(const struct sk_buff *skb) {
-  return (struct tcphdr *)(BPF_CORE_READ(skb, head) +
-                           BPF_CORE_READ(skb, transport_header));
+  return (struct tcphdr *)(READ_KERN(skb->head) +
+                           READ_KERN(skb->transport_header));
 }
 
 static inline struct iphdr *skb_to_iphdr(const struct sk_buff *skb) {
-  return (struct iphdr *)(BPF_CORE_READ(skb, head) +
-                          BPF_CORE_READ(skb, network_header));
+  return (struct iphdr *)(READ_KERN(skb->head) +
+                          READ_KERN(skb->network_header));
 }
 
 static inline struct ipv6hdr *skb_to_ipv6hdr(const struct sk_buff *skb) {
-  return (struct ipv6hdr *)(BPF_CORE_READ(skb, head) +
-                            BPF_CORE_READ(skb, network_header));
+  return (struct ipv6hdr *)(READ_KERN(skb->head) +
+                            READ_KERN(skb->network_header));
 }
 
 static inline struct ethhdr *skb_to_ethhdr(const struct sk_buff *skb) {
-  return (struct ethhdr *)(BPF_CORE_READ(skb, head) +
-                            BPF_CORE_READ(skb, mac_header));
+  return (struct ethhdr *)(READ_KERN(skb->head) +
+                           READ_KERN(skb->mac_header));
 }
 
 static int do_count4(void *ctx, struct sk_buff *skb, int len) {
@@ -149,14 +169,19 @@ static int do_count4(void *ctx, struct sk_buff *skb, int len) {
   bpf_probe_read(&version, 1, ip);
   if ((version & 0xf0) != 0x40) /* IPv4 only */
     return -1;
-  BPF_CORE_READ_INTO(&conn.protocol, ip, protocol);
-  BPF_CORE_READ_INTO(&conn.src_ip, ip, saddr);
-  BPF_CORE_READ_INTO(&conn.dst_ip, ip, daddr);
+  //  BPF_CORE_READ_INTO(&conn.protocol, ip, protocol);
+  // BPF_CORE_READ_INTO(&conn.src_ip, ip, saddr);
+  // BPF_CORE_READ_INTO(&conn.dst_ip, ip, daddr);
+  conn.protocol = READ_KERN(ip->protocol);
+  conn.src_ip = READ_KERN(ip->saddr);
+  conn.dst_ip = READ_KERN(ip->daddr);
   if ((conn.protocol == 6 || conn.protocol == 17) &&
-      BPF_CORE_READ(skb, transport_header) != 0) {
+      READ_KERN(skb->transport_header) != 0) {
     struct tcphdr *tcp = skb_to_tcphdr(skb);
-    BPF_CORE_READ_INTO(&conn.src_port, tcp, source);
-    BPF_CORE_READ_INTO(&conn.dst_port, tcp, dest);
+    // BPF_CORE_READ_INTO(&conn.src_port, tcp, source);
+    // BPF_CORE_READ_INTO(&conn.dst_port, tcp, dest);
+    conn.src_port = READ_KERN(tcp->source);
+    conn.dst_port = READ_KERN(tcp->dest);
   }
 
 
@@ -218,15 +243,15 @@ static int do_count6(struct sk_buff *skb, int len) {
 
 static __always_inline void do_count(void *ctx, struct sk_buff *skb, int len, char *dev) {
   struct ethhdr *hdr = skb_to_ethhdr(skb);
-  u16 prot = BPF_CORE_READ(hdr, h_proto);
+  u16 prot = READ_KERN(hdr->h_proto);
   if (!is_equal(dev, targ_iface, 16))
     return;
-  if (BPF_CORE_READ(skb, network_header) == 0)
+  if (READ_KERN(skb->network_header) == 0)
     return;
   if (prot == bpf_htons(ETH_P_IP))
       do_count4(ctx, skb, len);
-  if (prot == bpf_htons(ETH_P_IPV6))
-      do_count6(skb, len);
+  // if (prot == bpf_htons(ETH_P_IPV6))
+  //    do_count6(skb, len);
   return;
 }
 

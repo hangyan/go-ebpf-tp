@@ -19,6 +19,23 @@
 #include "bpf/bpf_endian.h"
 
 
+#ifndef CORE
+#define READ_KERN(ptr) ({ typeof(ptr) _val;                             \
+                          __builtin_memset(&_val, 0, sizeof(_val));     \
+                          bpf_probe_read(&_val, sizeof(_val), &ptr);    \
+                          _val;                                         \
+                        })
+#else
+// Try using READ_KERN here, just don't embed them in each other
+#define READ_KERN(ptr) ({ typeof(ptr) _val;                             \
+                          __builtin_memset(&_val, 0, sizeof(_val));     \
+                          bpf_core_read(&_val, sizeof(_val), &ptr);    \
+                          _val;                                         \
+                        })
+#endif
+
+
+
 #ifndef BPF_NOEXIST
 #define BPF_NOEXIST 1
 #endif

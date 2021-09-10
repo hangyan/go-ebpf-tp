@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang flowsnoop ./c/flowsnoop.bpf.c -- -I.
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang  flowsnoop ./c/flowsnoop-nc.bpf.c -- -I. -Wincompatible-pointer-types-discards-qualifiers
 import (
 	"bytes"
 	"encoding/binary"
