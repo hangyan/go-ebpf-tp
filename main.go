@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang  flowsnoop ./c/flowsnoop-filter.bpf.c -- -I. -Wincompatible-pointer-types-discards-qualifiers
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang  flowsnoop ./c/flowsnoop-filter.bpf.c -- -I. -fno-jump-tables
 import (
 	"bytes"
 	"encoding/binary"

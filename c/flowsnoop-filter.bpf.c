@@ -21,7 +21,7 @@
 
 
 #pragma clang diagnostic ignored "-Wincompatible-pointer-types-discards-qualifiers"
-#pragma clang diagnostic ignored "-Wimplicit-function-declaration"
+
 
 
 #ifndef CORE
@@ -67,6 +67,7 @@ volatile int use_map = 0;
 #define BUCKETS 10240
 
 struct conn_s {
+  u32 id;
   u32 src_ip;
   u32 dst_ip;
   u16 src_port;
@@ -74,10 +75,6 @@ struct conn_s {
   u8 protocol;
 };
 
-struct filter_result {
-    u32 id;
-    bool result;
-};
 
 struct {
         __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -86,12 +83,6 @@ struct {
 } events SEC(".maps");
 
 
-struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, u32);
-    __type(value, u32);
-} filter_fd SEC(".maps");
 
 // used for config setup
 struct {
@@ -137,38 +128,24 @@ static int is_equal(char *got, const volatile char *want, int n) {
 }
 
 
-// assume we now only filter on source ip
-static __always_inline int get_config(u32 key)
+struct callback_ctx {
+    u32 ip;
+    struct conn_s* conn;
+    struct trace_event_raw_net_dev_start_xmit* ctx;
+
+};
+
+static u64 check_elem(struct bpf_map *map, u32 *key, u32 *val,
+                        struct callback_ctx *data)
 {
-    u32 *config = bpf_map_lookup_elem(&config_map, &key);
-    if (config == NULL)
-        return 0;
-    return *config;
-}
-
-
-static __always_inline bool source_ip_match(u32 value) {
-    u32 filter = get_config(1);
-    return filter == value;
-}
-
-
-static __always_inline void filter_ip(u32 ip, struct filter_result* result) {
-    u32 fd_key = 1;
-    u32* fd = bpf_map_lookup_elem(&filter_fd, &fd_key);
-    u32 key, next_key,value, prev_key;
-    while(bpf_map_get_next_key(*fd, &prev_key, &key) == 0) {
-        prev_key=key;
-        u32* res = bpf_map_lookup_elem(fd, &key);
-        if  (*res <0) {
-            bpf_printk("no values now...");
-        } else {
-            bpf_printk("get ip: %d", value);
-        }
+    if (data->ip == *val) {
+        data->conn->id = *key;
+        bpf_perf_event_output(data->ctx, &events, 0, data->conn, sizeof(*data->conn));
     }
-    result->id = 0;
-    result->result = false;
+    // always return 0 to iterate all keys in configmap
+    return 0;
 }
+
 
 
 static inline struct tcphdr *skb_to_tcphdr(const struct sk_buff *skb) {
@@ -215,6 +192,13 @@ static int do_count4(void *ctx, struct sk_buff *skb, int len) {
     conn.dst_port = READ_KERN(tcp->dest);
   }
 
+  struct callback_ctx cctx = {};
+  cctx.ctx = ctx;
+  cctx.ip = conn.src_ip;
+  cctx.conn = &conn;
+
+
+  bpf_for_each_map_elem(&config_map, check_elem, &cctx, 0);
 
   if (use_map)
     conn_table = &bconnections;
@@ -231,7 +215,7 @@ static int do_count4(void *ctx, struct sk_buff *skb, int len) {
   }
 
 
-  bpf_perf_event_output(ctx, &events, 0, &conn, sizeof(conn));
+  // bpf_perf_event_output(ctx, &events, 0, &conn, sizeof(conn));
 
   return 0;
 }
