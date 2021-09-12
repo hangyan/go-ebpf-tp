@@ -4,7 +4,9 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/spf13/cast"
@@ -13,6 +15,11 @@ import (
 	"math/big"
 	"net"
 	"os"
+)
+
+var (
+	cfgPinnedPath    = "/sys/fs/bpf/demo-cfg"
+	eventsPinnedPath = "/sys/fs/bpf/trace-events"
 )
 
 type data struct {
@@ -67,33 +74,75 @@ func Pack32BinaryIP4(ip4Address string) string {
 }
 
 func main() {
+
+	// parse args
+	idPtr := flag.Int("id", 1, "give this program an id")
+	ip := flag.String("ip", "127.0.0.1", "filter by this ip")
+	flag.Parse()
+
+	id := *idPtr
+	k := uint32(id)
+	value := cast.ToUint32("0x" + Pack32BinaryIP4(*ip))
+	log.Printf("k: %d, v: %s\n", k, *ip)
+
 	setlimit()
 
-	objs := flowsnoopObjects{}
-	err := loadFlowsnoopObjects(&objs, nil)
-	if err != nil {
-		panic(err)
+	var events *ebpf.Map
+	var cfgFD int
+
+	// set filter if found pinned map or not
+	cfgMap, err := ebpf.LoadPinnedMap(cfgPinnedPath, nil)
+	if err == nil {
+		log.Println("pinned map exist, reuse it")
+		err = cfgMap.Update(k, value, 0)
+		if err != nil {
+			log.Fatalf("set filter error: %s", err.Error())
+		}
+		result, err := ebpf.LoadPinnedMap(eventsPinnedPath, nil)
+		if err != nil {
+			log.Fatalf("get pinned map error: %s", err.Error())
+		}
+		events = result
+
+		cfgFD = cfgMap.FD()
+
+	} else {
+		// load this program.
+		objs := flowsnoopObjects{}
+		err := loadFlowsnoopObjects(&objs, nil)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := objs.ConfigMap.Pin(cfgPinnedPath); err != nil {
+			log.Fatalf("pin config map error: %s", err.Error())
+		}
+		if err := objs.Events.Pin(eventsPinnedPath); err != nil {
+			log.Fatalf("pin events map error: %s", err.Error())
+		}
+
+		err = objs.ConfigMap.Update(k, value, 0)
+		if err != nil {
+			panic(err)
+		}
+
+		events = objs.Events
+		cfgFD = objs.ConfigMap.FD()
+
+		_, err = link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
+		if err != nil {
+			panic(err)
+		}
+		_, err = link.Tracepoint("net", "net_dev_start_xmit", objs.TracepointNetNetDevStartXmit)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Println("attach tracepoints...")
+
 	}
 
-	value := cast.ToUint32("0x" + Pack32BinaryIP4("192.168.227.4"))
-	k := uint32(1)
-	err = objs.ConfigMap.Update(k, value, 0)
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
-	if err != nil {
-		panic(err)
-	}
-	_, err = link.Tracepoint("net", "net_dev_start_xmit", objs.TracepointNetNetDevStartXmit)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("attach tracepoints...")
-
-	rd, err := perf.NewReader(objs.Events, os.Getpagesize())
+	rd, err := perf.NewReader(events, os.Getpagesize())
 	if err != nil {
 		log.Fatalf("read events map error")
 	}
