@@ -125,7 +125,7 @@ func main() {
 
 		events = objs.Events
 
-		k := uint32(1)
+		k := uint32(0)
 		v := uint32(objs.ConfigMap.FD())
 		err = objs.FilterFd.Update(k, v, 0)
 		if err != nil {

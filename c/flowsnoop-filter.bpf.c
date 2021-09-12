@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "vmlinux.h"           /* all kernel types */
+
 #include "bpf/bpf_core_read.h" /* for BPF CO-RE helpers */
 #include "bpf/bpf_helpers.h" /* most used helpers: SEC, __always_inline, etc */
 #include "bpf/bpf_tracing.h" /* for getting kprobe arguments */
@@ -20,6 +21,7 @@
 
 
 #pragma clang diagnostic ignored "-Wincompatible-pointer-types-discards-qualifiers"
+#pragma clang diagnostic ignored "-Wimplicit-function-declaration"
 
 
 #ifndef CORE
@@ -151,22 +153,21 @@ static __always_inline bool source_ip_match(u32 value) {
 }
 
 
-static __always_inline struct filter_result* filter_ip(u32 value) {
-    u32 fd = get_config(&filter_fd, 1);
+static __always_inline void filter_ip(u32 ip, struct filter_result* result) {
+    u32 fd_key = 1;
+    u32* fd = bpf_map_lookup_elem(&filter_fd, &fd_key);
     u32 key, next_key,value, prev_key;
-    struct filter_reslt result={};
-    while(bpf_map_get_next_key(fd, &prev_key, &key) == 0) {
+    while(bpf_map_get_next_key(*fd, &prev_key, &key) == 0) {
         prev_key=key;
-        res = bpf_map_lookup_elem(fd, &key, &value);
-        if  (res <0) {
+        u32* res = bpf_map_lookup_elem(fd, &key);
+        if  (*res <0) {
             bpf_printk("no values now...");
         } else {
             bpf_printk("get ip: %d", value);
         }
     }
-    result.id = 0;
-    result.result = false;
-    return &result;
+    result->id = 0;
+    result->result = false;
 }
 
 
