@@ -72,6 +72,11 @@ struct conn_s {
   u8 protocol;
 };
 
+struct filter_result {
+    u32 id;
+    bool result;
+};
+
 struct {
         __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
         __uint(key_size, sizeof(u32));
@@ -143,6 +148,25 @@ static __always_inline int get_config(u32 key)
 static __always_inline bool source_ip_match(u32 value) {
     u32 filter = get_config(1);
     return filter == value;
+}
+
+
+static __always_inline struct filter_result* filter_ip(u32 value) {
+    u32 fd = get_config(&filter_fd, 1);
+    u32 key, next_key,value, prev_key;
+    struct filter_reslt result={};
+    while(bpf_map_get_next_key(fd, &prev_key, &key) == 0) {
+        prev_key=key;
+        res = bpf_map_lookup_elem(fd, &key, &value);
+        if  (res <0) {
+            bpf_printk("no values now...");
+        } else {
+            bpf_printk("get ip: %d", value);
+        }
+    }
+    result.id = 0;
+    result.result = false;
+    return &result;
 }
 
 

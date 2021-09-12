@@ -88,7 +88,6 @@ func main() {
 	setlimit()
 
 	var events *ebpf.Map
-	var cfgFD int
 
 	// set filter if found pinned map or not
 	cfgMap, err := ebpf.LoadPinnedMap(cfgPinnedPath, nil)
@@ -103,8 +102,6 @@ func main() {
 			log.Fatalf("get pinned map error: %s", err.Error())
 		}
 		events = result
-
-		cfgFD = cfgMap.FD()
 
 	} else {
 		// load this program.
@@ -127,7 +124,13 @@ func main() {
 		}
 
 		events = objs.Events
-		cfgFD = objs.ConfigMap.FD()
+
+		k := uint32(1)
+		v := uint32(objs.ConfigMap.FD())
+		err = objs.FilterFd.Update(k, v, 0)
+		if err != nil {
+			log.Fatalf("set config fd error: %s", err.Error())
+		}
 
 		_, err = link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
 		if err != nil {
