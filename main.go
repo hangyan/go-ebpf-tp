@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang  flowsnoop ./c/flowsnoop-filter.bpf.c -- -I. -fno-jump-tables
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang  flowsnoop ./c/flowsnoop-count.bpf.c -- -I. -fno-jump-tables
 import (
 	"bytes"
 	"encoding/binary"
@@ -23,6 +23,7 @@ var (
 )
 
 type data struct {
+	ID    uint32
 	SAddr uint32
 	DAddr uint32
 	SPort uint16
@@ -31,6 +32,7 @@ type data struct {
 }
 
 type gdata struct {
+	ID    uint
 	SAddr string
 	DAddr string
 	SPort uint
@@ -125,13 +127,6 @@ func main() {
 
 		events = objs.Events
 
-		k := uint32(0)
-		v := uint32(objs.ConfigMap.FD())
-		err = objs.FilterFd.Update(k, v, 0)
-		if err != nil {
-			log.Fatalf("set config fd error: %s", err.Error())
-		}
-
 		_, err = link.Tracepoint("net", "netif_receive_skb", objs.TracepointNetNetifReceiveSkb)
 		if err != nil {
 			panic(err)
@@ -174,6 +169,7 @@ func main() {
 		binary.BigEndian.PutUint16(bdport, dt.DPort)
 
 		godata := gdata{
+			ID:    uint(dt.ID),
 			Proto: uint(dt.Proto),
 			SPort: uint(binary.LittleEndian.Uint16(bsport)),
 			DPort: uint(binary.LittleEndian.Uint16(bdport)),
@@ -187,7 +183,8 @@ func main() {
 		godata.SAddr = net.IP.String(LeSAddr)
 		godata.DAddr = net.IP.String(LeDAddr)
 
-		fmt.Fprintf(os.Stdout, "(proto: %d) %s (%d) => %s (%d)\n",
+		fmt.Fprintf(os.Stdout, "[%d](proto: %d) %s (%d) => %s (%d)\n",
+			godata.ID,
 			godata.Proto,
 			godata.SAddr, godata.SPort,
 			godata.DAddr, godata.DPort)
