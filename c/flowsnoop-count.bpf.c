@@ -140,15 +140,15 @@ struct callback_ctx {
 
 // use bounded loop to iterate config map.
 static inline void filter(u32 ip, void* ctx, struct conn_s* conn) {
-
-    u32 i=1;
-    for(; i <= 2 ;i++) {
-        u32 *filter_ip = bpf_map_lookup_elem(&config_map, &i);
+    for(u32 i=1; i <= 2 ;i++) {
+        // use new var won't create infinate loop.
+        u32 key = i;
+        u32 *filter_ip = bpf_map_lookup_elem(&config_map, &key);
         if (filter_ip == NULL)
             continue;
         if(*filter_ip == ip) {
             conn->id = i;
-            //bpf_perf_event_output(ctx, &events, 0, conn, sizeof(*conn));
+            bpf_perf_event_output(ctx, &events, 0, conn, sizeof(*conn));
         }
 
     }
