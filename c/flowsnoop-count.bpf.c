@@ -96,6 +96,14 @@ struct {
 } config_map SEC(".maps");
 
 
+// use this map to mark min,max,count of our loop.
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 3);
+    __type(key, u32);
+    __type(value, u32);
+} count SEC(".maps");
+
 struct connections_s {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, BUCKETS);
@@ -138,11 +146,28 @@ struct callback_ctx {
 
 };
 
+
+static __always_inline u32 get_mark(u32 key){
+    u32 *config = bpf_map_lookup_elem(&count, &key);
+    if (config == NULL)
+        return 0;
+    return *config;
+}
+
+
 // use bounded loop to iterate config map.
 static inline void filter(u32 ip, void* ctx, struct conn_s* conn) {
-    for(u32 i=1; i <= 2 ;i++) {
+    u32 min = get_mark(0);
+    u32 count = get_mark(1);
+
+    for(u32 i=1; i < 100 ;i++) {
         // use new var won't create infinate loop.
         u32 key = i;
+        if (i >= min+count) {
+            break;
+        }
+        const char fmt_str[] = "Hello, world, from BPF! My PID is %d\n";
+        bpf_trace_printk(fmt_str, sizeof(fmt_str), i);
         u32 *filter_ip = bpf_map_lookup_elem(&config_map, &key);
         if (filter_ip == NULL)
             continue;

@@ -18,11 +18,6 @@ import (
 	"time"
 )
 
-var (
-	cfgPinnedPath    = "/sys/fs/bpf/demo-cfg"
-	eventsPinnedPath = "/sys/fs/bpf/trace-events"
-)
-
 type data struct {
 	ID    uint32
 	SAddr uint32
@@ -86,6 +81,18 @@ func secound(objs *flowsnoopObjects, ip *string) {
 
 }
 
+func mark_index(objs *flowsnoopObjects, min uint32, count uint32) {
+	k := uint32(0)
+	if err := objs.Count.Update(k, min, 0); err != nil {
+		log.Fatalf("update map index error: %s", err.Error())
+	}
+	k = uint32(1)
+	if err := objs.Count.Update(k, count, 0); err != nil {
+		log.Fatalf("update map index error: %s", err.Error())
+	}
+
+}
+
 func main() {
 
 	// parse args
@@ -113,6 +120,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	mark_index(&objs, 1, 1)
 
 	events = objs.Events
 
@@ -126,6 +134,7 @@ func main() {
 	}
 
 	fmt.Println("attach tracepoints...")
+	mark_index(&objs, 1, 2)
 	go secound(&objs, ip)
 
 	rd, err := perf.NewReader(events, os.Getpagesize())
